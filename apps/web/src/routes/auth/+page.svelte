@@ -4,6 +4,9 @@
   import { convertAuthErrorResponse } from '$lib/functions/replication/error-handler';
   import Fa from 'svelte-fa';
 
+  export let params: Record<string, string> = {};
+  void params;
+
   $: if (browser) {
     handleAuthRequest();
   }

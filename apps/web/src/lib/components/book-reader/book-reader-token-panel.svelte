@@ -5,6 +5,7 @@
     DocumentTokenStatus
   } from '$lib/functions/anki';
   import { createEventDispatcher, tick } from 'svelte';
+  import { getRowOffsets, getVisibleRange } from './token-panel-window';
 
   type FilterId = 'all' | 'due' | DocumentTokenStatus;
   type OrthographyFilterId = 'all-scripts' | 'has-kanji';
@@ -57,6 +58,65 @@
   ];
   let listContainerEl: HTMLDivElement | undefined;
   let lastAutoScrollKey = '';
+  let scrollTop = 0;
+  let viewportHeight = 0;
+  let viewportWidth = 0;
+  let measuredWidth = 0;
+  let focusedToken: string | null = null;
+  let rowHeights = new Map<string, number>();
+
+  function rowKey(token: string, expanded: boolean): string {
+    return `${expanded ? '1' : '0'}${token}`;
+  }
+
+  // Expanded sentences have their own measurement; collapsed rows can be reused.
+  function measureRow(node: HTMLElement, initialKey: string) {
+    let key = initialKey;
+    const measure = () => {
+      const height = node.getBoundingClientRect().height;
+      if (height > 0 && rowHeights.get(key) !== height) {
+        rowHeights = new Map(rowHeights).set(key, height);
+      }
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return {
+      update(nextKey: string) {
+        key = nextKey;
+        measure();
+      },
+      destroy() {
+        observer.disconnect();
+      }
+    };
+  }
+
+  function rememberFocusedRow(event: FocusEvent): void {
+    if (event.target instanceof HTMLElement) {
+      focusedToken =
+        event.target.closest<HTMLElement>('[data-token-row]')?.dataset.tokenRow ?? null;
+    }
+  }
+
+  $: if (viewportWidth !== measuredWidth) {
+    measuredWidth = viewportWidth;
+    rowHeights = new Map();
+  }
+  $: rowOffsets = getRowOffsets(
+    sortedEntries.map((entry) => rowKey(entry.token, entry.token === activeToken)),
+    rowHeights
+  );
+  $: visibleRange = getVisibleRange(rowOffsets, scrollTop, viewportHeight);
+  $: windowIndices = Array.from(
+    { length: visibleRange.end - visibleRange.start },
+    (_, index) => visibleRange.start + index
+  );
+  $: focusedIndex = sortedEntries.findIndex((entry) => entry.token === focusedToken);
+  // Keep a focused button mounted when the user scrolls with a pointer.
+  $: visibleIndices =
+    focusedIndex >= 0 && !windowIndices.includes(focusedIndex)
+      ? [...windowIndices, focusedIndex].sort((a, b) => a - b)
+      : windowIndices;
 
   const kanjiPattern = /[\p{Script=Han}々]/u;
 
@@ -93,7 +153,7 @@
     const hasActiveEntry =
       !!activeToken && sortedEntries.some((entry) => entry.token === activeToken);
     const nextAutoScrollKey = hasActiveEntry
-      ? `${activeToken}:${activeSort}:${activeFilter}:${activeOrthographyFilter}:${sortedEntries.length}`
+      ? `${activeToken}:${activeSort}:${activeFilter}:${activeOrthographyFilter}:${sortedEntries.length}:${rowHeights.get(rowKey(activeToken as string, true)) ?? 0}`
       : '';
 
     if (!hasActiveEntry) {
@@ -180,23 +240,12 @@
       return;
     }
 
-    const row = Array.from(listContainerEl.querySelectorAll<HTMLElement>('[data-token-row]')).find(
-      (element) => element.getAttribute('data-token-row') === token
-    );
-    if (!row) {
-      return;
-    }
+    const index = sortedEntries.findIndex((entry) => entry.token === token);
+    if (index < 0) return;
 
-    const container = listContainerEl;
-    const rowRect = row.getBoundingClientRect();
-    const containerRect = container.getBoundingClientRect();
-    const rowTopWithinContainer = rowRect.top - containerRect.top + container.scrollTop;
-    const targetTop = Math.max(
-      0,
-      rowTopWithinContainer - container.clientHeight / 2 + rowRect.height / 2
-    );
-    container.scrollTo({
-      top: targetTop,
+    const height = rowOffsets[index + 1] - rowOffsets[index];
+    listContainerEl.scrollTo({
+      top: Math.max(0, rowOffsets[index] - listContainerEl.clientHeight / 2 + height / 2),
       behavior: 'smooth'
     });
   }
@@ -274,7 +323,7 @@
 
 <aside
   class="fixed right-4 top-16 z-20 flex h-[calc(100vh-5.5rem)] w-[min(24rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-slate-500/20 bg-slate-950/90 text-slate-50 shadow-2xl backdrop-blur"
-  style:writing-mode="'horizontal-tb'"
+  style:writing-mode="horizontal-tb"
 >
   <div class="flex items-center justify-between border-b border-slate-700/80 px-4 py-3">
     <div>
@@ -402,13 +451,29 @@
     </div>
   </div>
 
-  <div class="min-h-0 flex-1 overflow-y-auto" bind:this={listContainerEl}>
+  <div
+    class="min-h-0 flex-1 overflow-y-auto"
+    bind:this={listContainerEl}
+    bind:clientHeight={viewportHeight}
+    bind:clientWidth={viewportWidth}
+    on:scroll={() => (scrollTop = listContainerEl?.scrollTop ?? 0)}
+    on:focusin={rememberFocusedRow}
+  >
     {#if !loading && !error && filteredEntries.length === 0}
       <div class="px-4 py-6 text-sm text-slate-400">No tokens for this filter.</div>
     {:else}
-      <ul class="divide-y divide-slate-800">
-        {#each sortedEntries as entry (entry.token)}
-          <li class="px-4 py-3" data-token-row={entry.token}>
+      <ul class="relative" style:height={`${rowOffsets[rowOffsets.length - 1]}px`}>
+        {#each visibleIndices as index (sortedEntries[index].token)}
+          {@const entry = sortedEntries[index]}
+          <li
+            class="absolute inset-x-0 border-slate-800 px-4 py-3"
+            class:border-t={index > 0}
+            style:top={`${rowOffsets[index]}px`}
+            data-token-row={entry.token}
+            aria-posinset={index + 1}
+            aria-setsize={sortedEntries.length}
+            use:measureRow={rowKey(entry.token, entry.token === activeToken)}
+          >
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
                 <button

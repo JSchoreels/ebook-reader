@@ -30,6 +30,12 @@ const HAS_KANJI_REGEX = /[\p{Script=Han}々]/u;
 const HAS_KANA_REGEX = /[\p{Script=Hiragana}\p{Script=Katakana}]/u;
 const SHARED_TOKEN_RESOLUTION_OPTIONS = { allowTermEntriesEnrichment: true } as const;
 
+interface TokenLookupBatch {
+  words: Map<string, CachedWordData | undefined>;
+  lemmas: Map<string, CachedLemmas>;
+  writes: Map<string, CachedWordData>;
+}
+
 export interface ColoringOptions {
   enabled: boolean;
   yomitanUrl: string;
@@ -1876,7 +1882,7 @@ export class BookContentColoring {
 
   private async _getOrFetchLemmas(
     token: string,
-    options?: { allowTermEntriesEnrichment?: boolean }
+    options?: { allowTermEntriesEnrichment?: boolean; lookupBatch?: TokenLookupBatch }
   ): Promise<CachedLemmas> {
     const normalizedToken = token.trim();
     if (!normalizedToken) {
@@ -1887,7 +1893,9 @@ export class BookContentColoring {
 
     // IndexedDB is the source of truth, but weak cached lemmas are enriched.
     if (this.cacheService) {
-      const cachedLemmas = await this.cacheService.getLemmas(normalizedToken);
+      const cachedLemmas = options?.lookupBatch
+        ? options.lookupBatch.lemmas.get(normalizedToken)
+        : await this.cacheService.getLemmas(normalizedToken);
       if (
         cachedLemmas &&
         (cachedLemmas.lemmas.length > 0 || cachedLemmas.lemmaReadings.length > 0)
@@ -1944,13 +1952,19 @@ export class BookContentColoring {
    * @param word - Word to lookup
    * @returns Word data if found, undefined otherwise
    */
-  private async _getWordData(word: string): Promise<CachedWordData | undefined> {
+  private async _getWordData(
+    word: string,
+    lookupBatch?: TokenLookupBatch
+  ): Promise<CachedWordData | undefined> {
     const candidates = this._buildWordLookupCandidates(word);
 
     // IndexedDB is the source of truth.
     if (this.cacheService) {
       for (const candidate of candidates) {
-        let wordData = await this.cacheService.getWordData(candidate);
+        let wordData = lookupBatch?.words.has(candidate)
+          ? lookupBatch.words.get(candidate)
+          : await this.cacheService.getWordData(candidate);
+        lookupBatch?.words.set(candidate, wordData);
         if (!wordData) {
           continue;
         }
@@ -2040,11 +2054,11 @@ export class BookContentColoring {
 
   private async _resolveTokenWordData(
     token: string,
-    options?: { allowTermEntriesEnrichment?: boolean }
+    options?: { allowTermEntriesEnrichment?: boolean; lookupBatch?: TokenLookupBatch }
   ): Promise<CachedWordData | undefined> {
     let resolvedWordData = this._pickBetterResolvedWordData(
       undefined,
-      await this._getWordData(token)
+      await this._getWordData(token, options?.lookupBatch)
     );
     if (resolvedWordData && resolvedWordData.status === 'mature') {
       return resolvedWordData;
@@ -2054,7 +2068,8 @@ export class BookContentColoring {
     // If a direct token match already exists, only use cached lemmas to avoid unnecessary
     // termEntries calls; still allow lemma candidates to upgrade status (e.g. young -> mature).
     const lemmaData = await this._getOrFetchLemmas(token, {
-      allowTermEntriesEnrichment: resolvedWordData ? false : allowTermEntriesEnrichment
+      allowTermEntriesEnrichment: resolvedWordData ? false : allowTermEntriesEnrichment,
+      lookupBatch: options?.lookupBatch
     });
     const lemmaCandidates = this._selectLemmaCandidatesForToken(token, lemmaData);
     let finalLemmas = lemmaCandidates;
@@ -2062,7 +2077,7 @@ export class BookContentColoring {
     for (const lemmaCandidate of lemmaCandidates) {
       resolvedWordData = this._pickBetterResolvedWordData(
         resolvedWordData,
-        await this._getWordData(lemmaCandidate)
+        await this._getWordData(lemmaCandidate, options?.lookupBatch)
       );
       if (resolvedWordData && resolvedWordData.status === 'mature') {
         break;
@@ -2094,7 +2109,7 @@ export class BookContentColoring {
       for (const lemmaCandidate of mergedCandidates) {
         resolvedWordData = this._pickBetterResolvedWordData(
           resolvedWordData,
-          await this._getWordData(lemmaCandidate)
+          await this._getWordData(lemmaCandidate, options?.lookupBatch)
         );
         if (resolvedWordData && resolvedWordData.status === 'mature') {
           break;
@@ -2107,8 +2122,13 @@ export class BookContentColoring {
     }
 
     if (resolvedWordData && this.cacheService) {
-      // Persist token-level alias so token lookups don't depend on resolving through lemmas each time.
-      await this.cacheService.setWordData(token, resolvedWordData);
+      // Make aliases visible within the batch immediately; persist them together.
+      if (options?.lookupBatch) {
+        options.lookupBatch.words.set(token, resolvedWordData);
+        options.lookupBatch.writes.set(token, resolvedWordData);
+      } else {
+        await this.cacheService.setWordData(token, resolvedWordData);
+      }
     }
 
     return resolvedWordData;
@@ -2173,17 +2193,49 @@ export class BookContentColoring {
       return resolved;
     }
 
+    let lookupBatch: TokenLookupBatch | undefined;
+    if (this.cacheService) {
+      const lemmas = await this.cacheService.getLemmasBatch(uniqueTokens);
+      const candidates = new Set<string>();
+      for (const token of uniqueTokens) {
+        const lemmaData = lemmas.get(token);
+        const words = [
+          token,
+          ...(lemmaData ? this._selectLemmaCandidatesForToken(token, lemmaData) : [])
+        ];
+        for (const word of words) {
+          for (const candidate of this._buildWordLookupCandidates(word)) candidates.add(candidate);
+        }
+      }
+      const cachedWords = await this.cacheService.getWordDataBatch([...candidates]);
+      lookupBatch = {
+        words: new Map([...candidates].map((word) => [word, cachedWords.get(word)])),
+        lemmas,
+        writes: new Map()
+      };
+    }
+
     for (const chunk of this._chunkArray(uniqueTokens, 25)) {
       const chunkResolved = await Promise.all(
         chunk.map(async (token) => {
           try {
-            return { token, wordData: await this._resolveTokenWordData(token, options) };
+            return {
+              token,
+              wordData: await this._resolveTokenWordData(token, { ...options, lookupBatch })
+            };
           } catch (error) {
             console.debug('Token word-data resolution failed for token', token, error);
             return { token, wordData: undefined as CachedWordData | undefined };
           }
         })
       );
+
+      if (lookupBatch && lookupBatch.writes.size > 0 && this.cacheService) {
+        await this.cacheService.setWordDataBatch(
+          [...lookupBatch.writes].map(([word, data]) => ({ word, data }))
+        );
+        lookupBatch.writes.clear();
+      }
 
       for (const { token, wordData } of chunkResolved) {
         const normalizedWordData = this._normalizeResolvedWordData(wordData);

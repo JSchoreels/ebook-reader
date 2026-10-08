@@ -8,7 +8,7 @@ An online e-book reader that supports dictionary extensions like Yomitan, which 
 
 # Features
 
-- [x] Supports HTMLZ, Plain Text and EPUB files
+- [x] Supports EPUB, HTMLZ, HTML web pages, Plain Text, and SRT subtitle files
 - [x] Customizable environment (e. g. themes, font size, image blur, furigana settings etc.)
 - [x] Continuous / Pagination reader mode
 - [x] Vertical / Horizontal reading mode
@@ -27,6 +27,10 @@ An online e-book reader that supports dictionary extensions like Yomitan, which 
 The first time you enter the page (or have no files loaded yet) you will need to select the books you want to read from your device.
 You can load files by clicking/tapping on the dropzone or respective Icons.
 Alternatively, you can also drag & drop files or folders on the manager if your device supports it.
+
+Web pages can be imported directly by selecting **Import Web Page** in the manager and entering an HTTP or HTTPS URL. The reader extracts the article body while excluding navigation, related cards, headers, footers, dialogs, and sidebars. If a publisher blocks browser cross-origin requests, download the page as an HTML file and import that file instead.
+
+SRT imports keep the subtitle cue text while removing cue numbers, timestamps, and subtitle formatting tags.
 
 **Note for Text Files**: The book title (which is also used to check for duplicates) will be the name of the file. The text will be splitted into paragraphs by punctuation (。？！) and closing brackets/parenthesis (」）). Sections will be splitted around 10000 characters each. The file content will be parsed as plain text - any html tags (e. g. links) will therefore be printed out as text and not elements.
 
@@ -123,6 +127,7 @@ You may find the following controls in the manager:
 | ![Icon](assets/readme/control-bookselect.svg)                  | Toggles book selection                                                         |
 | ![Icon](assets/readme/control-bookselection.svg)               | Selects all books                                                              |
 | ![Icon](assets/readme/control-file-upload.svg)                 | Allows you to import new books to the library                                  |
+| Import Web Page                                                | Loads and imports an article from an HTTP or HTTPS URL                         |
 | ![Icon](assets/readme/control-folder-upload.svg)               | Allows you to import new books from a folder to the library (desktop only)     |
 | ![Icon](assets/readme/control-import.svg)                      | Allows you to import a previous exported zip file                              |
 | ![Icon](assets/readme/control-browser-source.svg)              | Indicates that data from the browser db is displayed                           |

@@ -4,7 +4,10 @@
  * All rights reserved.
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import 'fake-indexeddb/auto';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createAnkiCacheDb } from '$lib/data/database/anki-cache-db/factory';
+import { AnkiCacheService } from '$lib/data/database/anki-cache-db/anki-cache.service';
 import { BookContentColoring } from './color-book-content';
 import { TokenColorMode, TokenColorPalette, TokenStyle } from '$lib/data/anki/token-color';
 
@@ -201,7 +204,7 @@ describe('BookContentColoring single-path resolution', () => {
       due: false,
       cardIds: [1730241628479]
     });
-    expect(service._getWordData).toHaveBeenCalledWith('僕');
+    expect(service._getWordData).toHaveBeenCalledWith('僕', undefined);
   });
 
   it('enriches weak cached lemmas when unresolved and retries IndexedDB lookup', async () => {
@@ -532,5 +535,129 @@ describe('BookContentColoring single-path resolution', () => {
     });
 
     expect(result.orderedCardIds).toEqual([11, 22]);
+  });
+});
+
+describe('BookContentColoring batched IndexedDB resolution', () => {
+  let db: Awaited<ReturnType<typeof createAnkiCacheDb>>;
+  let cache: AnkiCacheService;
+  let service: any;
+  let name: string;
+
+  beforeEach(async () => {
+    name = `resolution-batch-${crypto.randomUUID()}`;
+    db = await createAnkiCacheDb(name);
+    cache = new AnkiCacheService(Promise.resolve(db));
+    service = createService();
+    service.cacheService = cache;
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    db.close();
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.deleteDatabase(name);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  });
+
+  it('preserves scalar lookup priority, aliases and missing words using batch transactions', async () => {
+    const seed = async () => {
+      await db.clear('wordData');
+      await cache.setWordDataBatch([
+        {
+          word: '笑い',
+          data: { status: 'young', analysisStatus: 'young', due: true, cardIds: [1] }
+        },
+        {
+          word: '笑う',
+          data: { status: 'mature', analysisStatus: 'mature', due: false, cardIds: [2] }
+        },
+        {
+          word: '僕',
+          data: { status: 'mature', analysisStatus: 'mature', due: false, cardIds: [3] }
+        }
+      ]);
+      await cache.setLemmasBatch([
+        { token: '笑い', lemmas: ['笑う'], lemmaReadings: ['わらう'] },
+        { token: 'ぼく', lemmas: ['僕-代名詞'], lemmaReadings: [] }
+      ]);
+    };
+    await seed();
+    const options = { allowTermEntriesEnrichment: false };
+    const expected = new Map();
+    for (const word of ['笑い', 'ぼく', '見つからない']) {
+      const value = await service._resolveTokenWordData(word, options);
+      if (value) expected.set(word, value);
+    }
+    await seed();
+    const singleRead = vi.spyOn(cache, 'getWordData');
+    const singleLemmaRead = vi.spyOn(cache, 'getLemmas');
+    const singleWrite = vi.spyOn(cache, 'setWordData');
+    const batchRead = vi.spyOn(cache, 'getWordDataBatch');
+    const batchWrite = vi.spyOn(cache, 'setWordDataBatch');
+
+    const result = await service._resolveTokenWordDataBatch(
+      ['笑い', 'ぼく', '笑い', '見つからない'],
+      options
+    );
+    expect(result).toEqual(expected);
+    expect(result.get('笑い')).toEqual({
+      status: 'mature',
+      analysisStatus: 'mature',
+      due: false,
+      cardIds: [2]
+    });
+    expect(result.get('ぼく')?.cardIds).toEqual([3]);
+    expect(result.has('見つからない')).toBe(false);
+    expect(singleRead).not.toHaveBeenCalled();
+    expect(singleLemmaRead).not.toHaveBeenCalled();
+    expect(singleWrite).not.toHaveBeenCalled();
+    expect(batchRead).toHaveBeenCalledTimes(1);
+    expect(batchWrite).toHaveBeenCalledTimes(1);
+    expect((await db.get('wordData', 'ぼく'))?.cardIds).toEqual([3]);
+  });
+
+  it('reads current values on the next batch and still enriches uncached lemmas', async () => {
+    await cache.setWordData('走る', {
+      status: 'young',
+      analysisStatus: 'young',
+      due: true,
+      cardIds: [7]
+    });
+    service.yomitan.lemmatize = vi.fn(async () => ({ lemmas: ['走る'], lemmaReadings: [] }));
+    expect((await service._resolveTokenWordDataBatch(['走った'])).get('走った')).toEqual({
+      status: 'young',
+      analysisStatus: 'young',
+      due: true,
+      cardIds: [7]
+    });
+    expect(service.yomitan.lemmatize).toHaveBeenCalledWith('走った');
+    await cache.setWordData('走った', {
+      status: 'mature',
+      analysisStatus: 'mature',
+      due: false,
+      cardIds: [8]
+    });
+    expect((await service._resolveTokenWordDataBatch(['走った'])).get('走った')).toEqual({
+      status: 'mature',
+      analysisStatus: 'mature',
+      due: false,
+      cardIds: [8]
+    });
+  });
+
+  it('does not use expired lemma entries or issue requests for an empty batch', async () => {
+    await db.put('lemmatize', { token: '古い', lemmas: ['古'], lemmaReadings: [], timestamp: 0 });
+    await cache.setWordData('古', { status: 'mature', cardIds: [9] });
+    const result = await service._resolveTokenWordDataBatch(['古い'], {
+      allowTermEntriesEnrichment: false
+    });
+    expect(result.size).toBe(0);
+    expect(await db.get('lemmatize', '古い')).toBeUndefined();
+    const read = vi.spyOn(cache, 'getLemmasBatch');
+    expect(await service._resolveTokenWordDataBatch([])).toEqual(new Map());
+    expect(read).not.toHaveBeenCalled();
   });
 });

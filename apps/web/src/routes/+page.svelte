@@ -6,6 +6,9 @@
   import { observe } from '$lib/functions/rxjs/use-observable';
   import { map, tap } from 'rxjs';
 
+  export let params: Record<string, string> = {};
+  void params;
+
   const autoNavigate$ = database.lastItem$.pipe(
     map((lastItem) => (lastItem ? `${pagePath}/b?id=${lastItem.dataId}` : 'manage')),
     tap(goto)

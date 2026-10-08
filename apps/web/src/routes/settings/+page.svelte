@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { tap } from 'rxjs';
   import { afterNavigate } from '$app/navigation';
+
   import SettingsContent from '$lib/components/settings/settings-content.svelte';
   import SettingsHeader from '$lib/components/settings/settings-header.svelte';
   import { pxScreen } from '$lib/css-classes';
@@ -77,6 +78,9 @@
   import { formatPageTitle } from '$lib/functions/format-page-title';
   import { writableSubject } from '$lib/functions/svelte/store';
   import { reduceToEmptyString } from '$lib/functions/rxjs/reduce-to-empty-string';
+
+  export let params: Record<string, string> = {};
+  void params;
 
   const persistentStorage$ = writableSubject(false);
   let persistentStorageReactive = false;

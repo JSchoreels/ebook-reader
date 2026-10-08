@@ -32,6 +32,7 @@
   } from '$lib/data/store';
   import { inputAllowDirectory } from '$lib/functions/file-dom/input-allow-directory';
   import { inputFile } from '$lib/functions/file-dom/input-file';
+  import { supportedBookFileAccept } from '$lib/functions/file-loaders/load-book-file';
   import { dummyFn, isMobile$, isOnOldUrl } from '$lib/functions/utils';
   import {
     faArrowDownShortWide,
@@ -66,6 +67,7 @@
     bugReportClick: void;
     backToBookClick: void;
     filesChange: FileList;
+    webPageImportClick: void;
     importBackup: File;
     selectionToStatistics: void;
     deleteStatistics: void;
@@ -86,7 +88,7 @@
     easing: quintOut
   };
 
-  const importMenuItems = [mergeEntries.FILE_IMPORT];
+  const importMenuItems = [mergeEntries.FILE_IMPORT, mergeEntries.WEB_PAGE_IMPORT];
   const storageSourceMenuItems = [
     { label: 'Browser', key: StorageKey.BROWSER, requiresConnectivity: false }
   ];
@@ -161,6 +163,10 @@
         backupImportElm.click();
         break;
 
+      case mergeEntries.WEB_PAGE_IMPORT.label:
+        dispatch('webPageImportClick');
+        break;
+
       default:
         fileImportElm.click();
         break;
@@ -209,7 +215,7 @@
   hidden
   multiple
   type="file"
-  accept="application/epub+zip,.epub,.htmlz,plain/text,.txt"
+  accept={supportedBookFileAccept}
   use:inputFile={dispatchFilesChange}
   bind:this={fileImportElm}
 />

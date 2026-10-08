@@ -26,6 +26,7 @@
   import { goto } from '$app/navigation';
   import { faCloudBolt, faPause, faPlay, faSpinner } from '@fortawesome/free-solid-svg-icons';
   import BookReader from '$lib/components/book-reader/book-reader.svelte';
+
   import type {
     AutoScroller,
     BookmarkManager,
@@ -168,6 +169,9 @@
     getReferencePoints,
     pulseElement
   } from '$lib/functions/range-util';
+
+  export let params: Record<string, string> = {};
+  void params;
 
   let showSpinner = true;
   let showHeader = false;

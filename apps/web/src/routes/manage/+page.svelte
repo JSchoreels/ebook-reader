@@ -9,6 +9,7 @@
   import LogReportDialog from '$lib/components/log-report-dialog.svelte';
   import { mergeEntries } from '$lib/components/merged-header-icon/merged-entries';
   import MessageDialog from '$lib/components/message-dialog.svelte';
+  import WebPageImportDialog from '$lib/components/web-page-import-dialog.svelte';
   import { preFilteredTitlesForStatistics$ } from '$lib/components/statistics/statistics-types';
   import { pxScreen } from '$lib/css-classes';
   import type { BooksDbBookmarkData } from '$lib/data/database/books-db/versions/books-db';
@@ -37,6 +38,11 @@
   import { cloneMutateSet } from '$lib/functions/clone-mutate-set';
   import { getDropEventFiles } from '$lib/functions/file-dom/get-drop-event-files';
   import { inputFile } from '$lib/functions/file-dom/input-file';
+  import { fetchHtmlPageFile } from '$lib/functions/file-loaders/html/fetch-html-page';
+  import {
+    isSupportedBookFile,
+    supportedBookFileAccept
+  } from '$lib/functions/file-loaders/load-book-file';
   import { formatPageTitle } from '$lib/functions/format-page-title';
   import { keyBy } from '$lib/functions/key-by';
   import { handleErrorDuringReplication } from '$lib/functions/replication/error-handler';
@@ -53,6 +59,9 @@
   import { combineLatest, map, Observable, share, Subject, switchMap, takeUntil } from 'rxjs';
   import { onDestroy, tick } from 'svelte';
   import Fa from 'svelte-fa';
+
+  export let params: Record<string, string> = {};
+  void params;
 
   const booksAreLoading$ = database.listLoading$.pipe(map((isLoading) => isLoading));
 
@@ -277,14 +286,13 @@
 
     initializeReplicationProgressData();
 
-    const supportedExtRegex = /\.(?:htmlz|epub|txt)$/;
-    const files = Array.from(fileList).filter((f) => supportedExtRegex.test(f.name));
+    const files = Array.from(fileList).filter(isSupportedBookFile);
     const errorTitle = 'Bookimport failed';
 
     if (!files.length) {
       resetProgress();
 
-      showError(errorTitle, 'File(s) must be HTMLZ, TXT or EPUB', '');
+      showError(errorTitle, 'Files must be EPUB, HTMLZ, HTML, SRT, or TXT', '');
       return;
     }
 
@@ -309,6 +317,31 @@
 
     if (error) {
       showError(errorTitle, error, 'Error(s) occurred during bookimport');
+    }
+  }
+
+  async function onWebPageImportClick() {
+    if (!operationAllowed()) {
+      return;
+    }
+
+    const pageUrl = await new Promise<string | undefined>((resolver) => {
+      dialogManager.dialogs$.next([
+        {
+          component: WebPageImportDialog,
+          props: { resolver }
+        }
+      ]);
+    });
+
+    if (!pageUrl) {
+      return;
+    }
+
+    try {
+      await onFilesChange([await fetchHtmlPageFile(pageUrl)]);
+    } catch (error: any) {
+      showError('Page import failed', error.message, 'Error loading the web page');
     }
   }
 
@@ -662,6 +695,7 @@
     on:backToBookClick={backToCurrentBook}
     on:removeClick={() => removeBooks(Array.from(selectedBookIds))}
     on:filesChange={(ev) => onFilesChange(ev.detail)}
+    on:webPageImportClick={onWebPageImportClick}
     on:domainHintClick={onDomainHintClick}
     on:bugReportClick={onBugReportClick}
     on:cancelReplication={() => {
@@ -712,7 +746,7 @@
     <label class="fixed inset-0 z-0">
       <input
         type="file"
-        accept="application/epub+zip,.epub,.htmlz,plain/text,.txt"
+        accept={supportedBookFileAccept}
         multiple
         hidden
         use:inputFile={onFilesChange}

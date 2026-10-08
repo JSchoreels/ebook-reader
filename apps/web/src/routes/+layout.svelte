@@ -10,6 +10,9 @@
   import { MetaTags } from 'svelte-meta-tags';
   import '../app.scss';
 
+  export let params: Record<string, string> = {};
+  void params;
+
   let path = '';
   let dialogs: Dialog[] = [];
   let clickOnCloseDisabled = false;

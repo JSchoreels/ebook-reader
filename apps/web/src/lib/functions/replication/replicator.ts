@@ -1,6 +1,6 @@
 /**
  * @license BSD-3-Clause
- * Copyright (c) 2025, ッツ Reader Authors
+ * Copyright (c) 2026, ッツ Reader Authors
  * All rights reserved.
  */
 
@@ -9,10 +9,7 @@ import { BaseStorageHandler, FilePrefix } from '$lib/data/storage/handler/base-h
 import { storage } from '$lib/data/window/navigator/storage';
 import { StorageDataType, StorageKey } from '$lib/data/storage/storage-types';
 import { database, requestPersistentStorage$ } from '$lib/data/store';
-import loadEpub from '$lib/functions/file-loaders/epub/load-epub';
-import loadHtmlz from '$lib/functions/file-loaders/htmlz/load-htmlz';
-import loadTxt from '$lib/functions/file-loaders/txt/load-txt';
-import type { LoadData } from '$lib/functions/file-loaders/types';
+import { loadBookFile } from '$lib/functions/file-loaders/load-book-file';
 import { handleErrorDuringReplication } from '$lib/functions/replication/error-handler';
 import { throwIfAborted } from '$lib/functions/replication/replication-error';
 import {
@@ -65,15 +62,7 @@ export async function importData(
         try {
           throwIfAborted(cancelSignal);
 
-          let bookContent: LoadData;
-
-          if (file.name.endsWith('.epub')) {
-            bookContent = await loadEpub(file, document, lastBookModified);
-          } else if (file.name.endsWith('.txt')) {
-            bookContent = await loadTxt(file, lastBookModified);
-          } else {
-            bookContent = await loadHtmlz(file, document, lastBookModified);
-          }
+          const bookContent = await loadBookFile(file, document, lastBookModified);
 
           if (fileCountData) {
             fileCountData[currentTitle] = bookContent.characters;

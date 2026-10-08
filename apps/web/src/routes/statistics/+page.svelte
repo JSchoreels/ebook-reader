@@ -26,8 +26,12 @@
   import { clickOutside } from '$lib/functions/use-click-outside';
   import { map, share } from 'rxjs';
   import { onDestroy, tick } from 'svelte';
+
   import { quintInOut } from 'svelte/easing';
   import { fly } from 'svelte/transition';
+
+  export let params: Record<string, string> = {};
+  void params;
 
   const currentBookId$ = database.lastItem$.pipe(
     map((item) => item?.dataId),

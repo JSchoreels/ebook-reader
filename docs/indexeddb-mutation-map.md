@@ -1,6 +1,6 @@
 # IndexedDB Mutation Map (Web App)
 
-Last updated: 2026-03-22
+Last updated: 2026-10-08
 
 This document inventories every place in `apps/web` where IndexedDB rows are inserted, updated, or deleted (including clear operations and mutating reads), so debugging cache/data drift is easier.
 
@@ -58,9 +58,10 @@ Note: `wordData` no longer auto-deletes on read.
   - `preTokenizeDocument` (token-count bootstrap snapshot)
 - `setWordDataBatch`:
   - `warmCache` (bulk population from Anki decks)
+  - `_resolveTokenWordDataBatch` (persist resolved token aliases after each resolution chunk)
 - `setWordData`:
   - `_refreshTokenWordDataFromAnki` (hover/refresh update path)
-  - `_resolveTokenWordData` (persist token alias when resolved via lemma candidates)
+  - `_resolveTokenWordData` (persist a resolved token alias outside a batch; batch resolution queues the alias for `setWordDataBatch`)
   - `_resolveTokenAnalysisData` (populate missing analysis fields for resolved tokens)
 - `setTokens`:
   - `_getOrFetchTokens` (cache tokenize result)
@@ -168,6 +169,7 @@ These mutate IndexedDB directly (without going through `DatabaseService` wrapper
     - reading token surface: reading lemmas can be used
   - token resolution now coerces numeric-string `cardIds` (legacy rows) into numbers before status resolution; this avoids false `uncollected` results when rows exist but IDs are string-typed
   - token resolution now reconciles direct token rows with lemma rows and keeps the highest-priority status (instead of stopping at the direct token row); this avoids under-coloring when both `surface` and `lemma` exist in `wordData`
+  - batch token resolution reads current lemmas and word candidates once per batch, shares resolved aliases within that batch, and persists aliases after each chunk; it does not retain the lookup maps across batches
   - stale `wordData` does **not** trigger automatic background Anki refresh on read
   - token panel analysis is now gated by a one-time `wordData` priming step (`runWarmCacheRefreshFlow`) before `analyzeDocumentText`; this ensures the panel runs only after warm-cache `wordData` population completes for the session
   - hover refresh updates `wordData` rows in place and does not delete token rows as part of fallback checks
