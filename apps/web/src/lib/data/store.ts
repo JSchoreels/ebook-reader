@@ -526,7 +526,7 @@ export const ankiTokenStyle$ = writableStringLocalStorageSubject<TokenStyle>()(
 
 export const ankiColorPalette$ = writableStringLocalStorageSubject<TokenColorPalette>()(
   'ankiColorPalette',
-  TokenColorPalette.FULL
+  TokenColorPalette.SIMPLE
 );
 
 export const ankiDesiredRetention$ = writableNumberLocalStorageSubject()(
