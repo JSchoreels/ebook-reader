@@ -1,6 +1,6 @@
 /**
  * @license BSD-3-Clause
- * Copyright (c) 2025, ッツ Reader Authors
+ * Copyright (c) 2026, ッツ Reader Authors
  * All rights reserved.
  */
 
@@ -11,6 +11,7 @@ import { BaseStorageHandler } from '$lib/data/storage/handler/base-handler';
 import buildDummyBookImage from '$lib/functions/file-loaders/utils/build-dummy-book-image';
 import { isElementGaiji } from '$lib/functions/is-element-gaiji';
 import { map } from 'rxjs/operators';
+import { formatStyleDeclarations } from './format-style-sheet';
 import {
   readerImageGalleryPictures$,
   type ReaderImageGalleryPicture
@@ -27,6 +28,7 @@ export default function formatBookDataHtml(
       const element = document.createElement('div');
       element.innerHTML = elementHtml;
 
+      formatInlineStyles(element);
       addImageContainerClass(element);
       // combineImagePairs(element);
       removeSvgDimensions(element);
@@ -36,6 +38,27 @@ export default function formatBookDataHtml(
       return element.innerHTML;
     })
   );
+}
+
+function formatInlineStyles(element: HTMLElement) {
+  element.querySelectorAll<HTMLElement | SVGElement>('[style]').forEach((styledElement) => {
+    const declarations = Array.from(styledElement.style).map((property) => ({
+      type: 'declaration' as const,
+      property,
+      value:
+        styledElement.style.getPropertyValue(property) +
+        (styledElement.style.getPropertyPriority(property) ? '!important' : '')
+    }));
+    const formattedStyle = formatStyleDeclarations(declarations)
+      .map(({ property, value }) => `${property}:${value};`)
+      .join('');
+
+    if (formattedStyle) {
+      styledElement.setAttribute('style', formattedStyle);
+    } else {
+      styledElement.removeAttribute('style');
+    }
+  });
 }
 
 function getHtmlWithImageSource(bookData: BooksDbBookData, isPaginated: boolean) {

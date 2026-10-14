@@ -28,6 +28,8 @@ The first time you enter the page (or have no files loaded yet) you will need to
 You can load files by clicking/tapping on the dropzone or respective Icons.
 Alternatively, you can also drag & drop files or folders on the manager if your device supports it.
 
+The reader's writing mode, line height, and paragraph indentation apply to both EPUB stylesheets and inline styles. EPUB font sizes specified in `rem` scale with the reader's font size while preserving relative sizes for headings and annotations. These adjustments apply when opening a book, including books already in your library.
+
 Web pages can be imported directly by selecting **Import Web Page** in the manager and entering an HTTP or HTTPS URL. The reader extracts the article body while excluding navigation, related cards, headers, footers, dialogs, and sidebars. If a publisher blocks browser cross-origin requests, download the page as an HTML file and import that file instead.
 
 SRT imports keep the subtitle cue text while removing cue numbers, timestamps, and subtitle formatting tags.

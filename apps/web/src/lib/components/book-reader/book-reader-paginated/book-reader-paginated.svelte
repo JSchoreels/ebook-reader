@@ -667,6 +667,7 @@
   bind:this={scrollEl}
   style:color={fontColor}
   style:font-size="{fontSize}px"
+  style:--book-content-font-size="{fontSize}px"
   style:line-height={lineHeight}
   style:padding-top={!verticalMode && firstDimensionMargin
     ? `${firstDimensionMargin}px`

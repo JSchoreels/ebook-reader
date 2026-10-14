@@ -1,6 +1,6 @@
 /**
  * @license BSD-3-Clause
- * Copyright (c) 2025, ッツ Reader Authors
+ * Copyright (c) 2026, ッツ Reader Authors
  * All rights reserved.
  */
 
@@ -20,30 +20,7 @@ export default function formatStyleSheet(bookData: BooksDbBookData, parentSelect
     .filter((r) => !r.selectors.some((s) => htmlRegex.test(s) || bodyRegex.test(s)));
 
   newRules.forEach((rule) => {
-    const newDeclarations: Record<string, string> = {};
-
-    rule.declarations = rule.declarations.filter(
-      (d) => !/line-height$/.test(d.property) && !/text-indent$/.test(d.property)
-    );
-
-    const lineBreakFormatter = new LineBreakFormatter(rule.declarations, newDeclarations);
-
-    rule.declarations.forEach((declaration) => {
-      assignKeyValToObj(newDeclarations, convertPrefixedDeclaration(declaration));
-      assignKeyValToObj(newDeclarations, convertFontFamily(declaration));
-      assignKeyValToObj(newDeclarations, lineBreakFormatter.convert(declaration));
-      // Might also want to handle margin conversion
-    });
-
-    Object.entries(newDeclarations).forEach(([property, value]) => {
-      rule.declarations.push({
-        type: 'declaration',
-        property,
-        value
-      });
-    });
-
-    rule.declarations = rule.declarations.filter((d) => !/writing-mode\s*$/.test(d.property));
+    rule.declarations = formatStyleDeclarations(rule.declarations);
   });
 
   newRules.push(getGeckoBrSolutionRule());
@@ -58,6 +35,27 @@ export default function formatStyleSheet(bookData: BooksDbBookData, parentSelect
     },
     type: 'stylesheet'
   });
+}
+
+export function formatStyleDeclarations(declarations: Declaration[]) {
+  const newDeclarations: Record<string, string> = {};
+  const formattedDeclarations = declarations.filter(
+    (d) => !/(?:line-height|text-indent)\s*$/i.test(d.property)
+  );
+  const lineBreakFormatter = new LineBreakFormatter(formattedDeclarations, newDeclarations);
+
+  formattedDeclarations.forEach((declaration) => {
+    assignKeyValToObj(newDeclarations, convertPrefixedDeclaration(declaration));
+    assignKeyValToObj(newDeclarations, convertFontFamily(declaration));
+    assignKeyValToObj(newDeclarations, convertFontSize(declaration));
+    assignKeyValToObj(newDeclarations, lineBreakFormatter.convert(declaration));
+  });
+
+  Object.entries(newDeclarations).forEach(([property, value]) => {
+    formattedDeclarations.push({ type: 'declaration', property, value });
+  });
+
+  return formattedDeclarations.filter((d) => !/writing-mode\s*$/i.test(d.property));
 }
 
 function encapsulatedSelectors(selectors: string[], parentSelector: string) {
@@ -104,6 +102,19 @@ function convertFontFamily(declaration: Declaration) {
     };
   }
   return undefined;
+}
+
+function convertFontSize(declaration: Declaration) {
+  if (declaration.property.toLowerCase() !== 'font-size') return undefined;
+
+  const remSize = /^(\d*\.?\d+)rem\s*(!important)?\s*$/i.exec(declaration.value);
+  if (!remSize) return undefined;
+
+  // Keep root-relative sizes proportional to the reader font, including nested spans.
+  return {
+    key: 'font-size',
+    value: `calc(var(--book-content-font-size) * ${remSize[1]})${remSize[2] || ''}`
+  };
 }
 
 class LineBreakFormatter {

@@ -727,6 +727,7 @@
   bind:this={contentEl}
   style:color={fontColor}
   style:font-size="{fontSize}px"
+  style:--book-content-font-size="{fontSize}px"
   style:line-height={lineHeight}
   style:max-width={!verticalMode && secondDimensionMaxValue
     ? `${secondDimensionMaxValue}px`
